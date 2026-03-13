@@ -1,0 +1,5 @@
+node_modules/
+dist/
+*.vsix
+spike/node_modules/
+spike/dist_test.cjs

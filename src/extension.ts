@@ -1,0 +1,145 @@
+import * as vscode from 'vscode';
+import { GitRunner } from './git/GitRunner';
+import { RepoDetector } from './repo/RepoDetector';
+import { ResultStore } from './search/ResultStore';
+import { SearchController } from './search/SearchController';
+import { SidebarTreeView } from './ui/SidebarTreeView';
+import { ActionExecutor } from './ui/ActionExecutor';
+import { DetailPanel } from './ui/DetailPanel';
+import { SearchMode, ScanDepth } from './types';
+
+export function activate(context: vscode.ExtensionContext): void {
+  const outputChannel = vscode.window.createOutputChannel('GitEverywhere');
+  context.subscriptions.push(outputChannel);
+
+  const gitRunner = new GitRunner(outputChannel);
+  const store = new ResultStore();
+  const controller = new SearchController(gitRunner, store, outputChannel);
+  const repoDetector = new RepoDetector(gitRunner, outputChannel);
+  const treeView = new SidebarTreeView(store);
+  const executor = new ActionExecutor(gitRunner, outputChannel);
+
+  // Register the tree view
+  const vsTreeView = vscode.window.createTreeView('gitEverywhereExplorer', {
+    treeDataProvider: treeView,
+    showCollapseAll: true,
+  });
+  context.subscriptions.push(vsTreeView, treeView);
+
+  // Detect repo on startup
+  repoDetector.detect();
+
+  // Search command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('giteverywhere.startSearch', async () => {
+      const cwd = repoDetector.repoRoot;
+      if (!cwd) {
+        vscode.window.showWarningMessage('GitEverywhere: No git repository found in workspace.');
+        return;
+      }
+
+      // Mode picker
+      type ModeItem = vscode.QuickPickItem & { value: SearchMode };
+      const modeItems: ModeItem[] = [
+        { label: '$(search) Content', description: 'Search code/text across all history', value: 'content' },
+        { label: '$(git-commit) Commit message', description: 'Search commit messages', value: 'commitMessage' },
+        { label: '$(file) Filename / path', description: 'Search file names across all history', value: 'filename' },
+      ];
+      const modeChoice = await vscode.window.showQuickPick<ModeItem>(modeItems, {
+        placeHolder: 'How do you want to search?',
+        title: 'GitEverywhere — Search Mode',
+      });
+      if (!modeChoice) return;
+
+      // Query input
+      const query = await vscode.window.showInputBox({
+        placeHolder: 'Enter search string...',
+        title: `GitEverywhere — ${modeChoice.label}`,
+        validateInput: (v) => v.trim() ? null : 'Please enter a search string',
+      });
+      if (!query) return;
+
+      // Depth picker
+      type DepthItem = vscode.QuickPickItem & { value: ScanDepth };
+      const depthItems: DepthItem[] = [
+        { label: '$(zap) Fast', description: 'Branches, reflog, stash — seconds', value: 'fast' },
+        { label: '$(search) Deep', description: '+ dangling objects, FETCH_HEAD, notes, special heads — 10-30s', value: 'deep' },
+        { label: '$(database) Full', description: '+ entire object store — slow on large repos', value: 'full' },
+      ];
+      const defaultDepth = vscode.workspace.getConfiguration('giteverywhere').get<ScanDepth>('defaultScanDepth', 'fast');
+      const depthChoice = await vscode.window.showQuickPick<DepthItem>(depthItems, {
+        placeHolder: 'Select scan depth',
+        title: 'GitEverywhere — Scan Depth',
+      });
+      if (!depthChoice) return;
+
+      // Run search
+      await vscode.commands.executeCommand('setContext', 'giteverywhere.searching', true);
+      treeView.setSearching(true);
+
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Window,
+          title: 'GitEverywhere',
+          cancellable: false,
+        },
+        async (progress) => {
+          try {
+            await controller.search(query, modeChoice.value, depthChoice.value, cwd, (p) => {
+              progress.report({ message: `Scanning ${p.phase}… (${p.count} found)` });
+            });
+          } finally {
+            await vscode.commands.executeCommand('setContext', 'giteverywhere.searching', false);
+            treeView.setSearching(false);
+            const total = store.size;
+            await vscode.commands.executeCommand('setContext', 'giteverywhere.hasResults', total > 0);
+            outputChannel.appendLine(`Search complete. ${total} result(s) found.`);
+          }
+        },
+      );
+    }),
+  );
+
+  // Cancel command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('giteverywhere.cancelSearch', () => {
+      controller.cancel();
+      vscode.commands.executeCommand('setContext', 'giteverywhere.searching', false);
+      treeView.setSearching(false);
+    }),
+  );
+
+  // Clear results command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('giteverywhere.clearResults', () => {
+      controller.cancel();
+      store.clear();
+      vscode.commands.executeCommand('setContext', 'giteverywhere.searching', false);
+      vscode.commands.executeCommand('setContext', 'giteverywhere.hasResults', false);
+      treeView.setSearching(false);
+    }),
+  );
+
+  // Show detail command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('giteverywhere.showDetail', (sha: string) => {
+      const cwd = repoDetector.repoRoot;
+      if (!cwd) return;
+      DetailPanel.show(sha, store, gitRunner, executor, context.extensionUri, cwd);
+    }),
+  );
+
+  // Copy SHA command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('giteverywhere.copysha', async (sha: string) => {
+      await vscode.env.clipboard.writeText(sha);
+      vscode.window.setStatusBarMessage('SHA copied to clipboard', 2000);
+    }),
+  );
+
+  outputChannel.appendLine('GitEverywhere activated.');
+}
+
+export function deactivate(): void {
+  // SearchController.cancel() is called via command; store and controller are GC'd
+}

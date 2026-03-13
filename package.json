@@ -1,0 +1,135 @@
+{
+  "name": "giteverywhere",
+  "displayName": "GitEverywhere",
+  "description": "Search anything, anywhere in your git history. Branches, reflog, stash, dangling commits, blobs — all in one place.",
+  "version": "0.1.0",
+  "publisher": "boria8",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/boria8/git-everywhere"
+  },
+  "engines": {
+    "vscode": "^1.87.0"
+  },
+  "categories": [
+    "SCM Providers"
+  ],
+  "activationEvents": [
+    "onView:gitEverywhereExplorer"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "gitEverywhere",
+          "title": "GitEverywhere",
+          "icon": "$(git-branch)"
+        }
+      ]
+    },
+    "views": {
+      "gitEverywhere": [
+        {
+          "id": "gitEverywhereExplorer",
+          "name": "Search Results"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "giteverywhere.startSearch",
+        "title": "Search Git History",
+        "icon": "$(search)"
+      },
+      {
+        "command": "giteverywhere.cancelSearch",
+        "title": "Cancel Search",
+        "icon": "$(stop-circle)"
+      },
+      {
+        "command": "giteverywhere.clearResults",
+        "title": "Clear Results",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "giteverywhere.showDetail",
+        "title": "Show Commit Detail"
+      },
+      {
+        "command": "giteverywhere.copysha",
+        "title": "Copy SHA"
+      }
+    ],
+    "viewsWelcome": [
+      {
+        "view": "gitEverywhereExplorer",
+        "contents": "Search anything in your git history.\nIncludes branches, reflog, stash, dangling commits, and more.\n[$(search) Search Git History](command:giteverywhere.startSearch)",
+        "when": "!giteverywhere.hasResults"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "giteverywhere.startSearch",
+          "when": "view == gitEverywhereExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "giteverywhere.cancelSearch",
+          "when": "view == gitEverywhereExplorer && giteverywhere.searching",
+          "group": "navigation"
+        },
+        {
+          "command": "giteverywhere.clearResults",
+          "when": "view == gitEverywhereExplorer",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "giteverywhere.copysha",
+          "when": "viewItem == commitResult",
+          "group": "giteverywhere"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "GitEverywhere",
+      "properties": {
+        "giteverywhere.defaultScanDepth": {
+          "type": "string",
+          "enum": [
+            "fast",
+            "deep",
+            "full"
+          ],
+          "default": "fast",
+          "description": "Default scan depth for searches"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "test": "vitest run",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "*",
+    "@types/vscode": "^1.87.0",
+    "@vitest/coverage-v8": "*",
+    "esbuild": "*",
+    "typescript": "*",
+    "vitest": "*"
+  },
+  "dependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "execa": "^9.0.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "tinyexec": "^1.0.4"
+  }
+}
