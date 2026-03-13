@@ -2,7 +2,7 @@
   "name": "giteverywhere",
   "displayName": "GitEverywhere",
   "description": "Search anything, anywhere in your git history. Branches, reflog, stash, dangling commits, blobs — all in one place.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "boria8",
   "repository": {
     "type": "git",
@@ -59,6 +59,11 @@
       {
         "command": "giteverywhere.copysha",
         "title": "Copy SHA"
+      },
+      {
+        "command": "giteverywhere.switchRepo",
+        "title": "Switch Repository",
+        "icon": "$(repo)"
       }
     ],
     "viewsWelcome": [
@@ -82,6 +87,11 @@
         },
         {
           "command": "giteverywhere.clearResults",
+          "when": "view == gitEverywhereExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "giteverywhere.switchRepo",
           "when": "view == gitEverywhereExplorer",
           "group": "navigation"
         }

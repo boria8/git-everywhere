@@ -2,7 +2,10 @@ import { execa } from 'execa';
 import * as vscode from 'vscode';
 
 export class GitRunner {
-  constructor(private readonly outputChannel: vscode.OutputChannel) {}
+  constructor(
+    private readonly outputChannel: vscode.OutputChannel,
+    private readonly gitPath: string = 'git',
+  ) {}
 
   /**
    * Run a git command and return the full stdout as a string.
@@ -10,7 +13,7 @@ export class GitRunner {
    */
   async run(args: string[], cwd: string, signal?: AbortSignal): Promise<string> {
     try {
-      const result = await execa('git', args, {
+      const result = await execa(this.gitPath, args, {
         cwd,
         reject: false,
         cancelSignal: signal,
@@ -37,7 +40,7 @@ export class GitRunner {
     onLine: (line: string) => void,
   ): Promise<void> {
     try {
-      const subprocess = execa('git', args, {
+      const subprocess = execa(this.gitPath, args, {
         cwd,
         reject: false,
         cancelSignal: signal,

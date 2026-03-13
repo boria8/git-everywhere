@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { GitRunner } from './git/GitRunner';
 import { RepoDetector } from './repo/RepoDetector';
 import { ResultStore } from './search/ResultStore';
@@ -8,11 +9,22 @@ import { ActionExecutor } from './ui/ActionExecutor';
 import { DetailPanel } from './ui/DetailPanel';
 import { SearchMode, ScanDepth } from './types';
 
+function resolveGitPath(): string {
+  // Prefer the path VS Code's own git extension already resolved (works on Mac/Linux/Windows)
+  const builtinGit = vscode.extensions.getExtension('vscode.git');
+  if (builtinGit?.isActive) {
+    const p: string | undefined = builtinGit.exports?.getAPI(1)?.git?.path;
+    if (p) return p;
+  }
+  // Fall back to user-configured git.path setting, then plain 'git'
+  return vscode.workspace.getConfiguration('git').get<string>('path') || 'git';
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   const outputChannel = vscode.window.createOutputChannel('GitEverywhere');
   context.subscriptions.push(outputChannel);
 
-  const gitRunner = new GitRunner(outputChannel);
+  const gitRunner = new GitRunner(outputChannel, resolveGitPath());
   const store = new ResultStore();
   const controller = new SearchController(gitRunner, store, outputChannel);
   const repoDetector = new RepoDetector(gitRunner, outputChannel);
@@ -97,6 +109,17 @@ export function activate(context: vscode.ExtensionContext): void {
           }
         },
       );
+    }),
+  );
+
+  // Switch repository command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('giteverywhere.switchRepo', async () => {
+      await repoDetector.detect();
+      const root = repoDetector.repoRoot;
+      if (root) {
+        vscode.window.setStatusBarMessage(`GitEverywhere: ${path.basename(root)}`, 3000);
+      }
     }),
   );
 

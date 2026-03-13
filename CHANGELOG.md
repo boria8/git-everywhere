@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1] - 2026-03-13
+
+### Fixed
+- Git binary not found on macOS — now resolved via VS Code's built-in git extension (works with Homebrew, XCode CLT, custom paths)
+- Opening a folder containing multiple git repositories now shows a picker to select which repo to search
+- Added "Switch Repository" button in the sidebar to re-trigger repo selection at any time
+
 ## [0.1.0] - 2026-03-13
 
 ### Added
