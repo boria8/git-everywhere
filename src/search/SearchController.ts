@@ -212,21 +212,27 @@ export class SearchController {
 
     if (mode === 'content') {
       const output = await this.gitRunner.run(
-        ['log', '-1', `-S${query}`, '--format=%H', sha],
+        ['log', '-1', `-S${query}`, '--name-only', '--format=%H\t%D', sha],
         cwd,
         signal,
       );
-      if (output.trim()) {
-        this.store.upsertCommit(sha, source);
+      const lines = output.split('\n').map(l => l.trim()).filter(Boolean);
+      if (lines.length > 0) {
+        const [, decorators = ''] = lines[0].split('\t');
+        const matchedPaths = lines.slice(1);
+        const headBranch = this._parseHeadBranch(decorators);
+        this.store.upsertCommit(sha, source, matchedPaths.length > 0 ? matchedPaths : undefined, headBranch);
       }
     } else if (mode === 'commitMessage') {
       const output = await this.gitRunner.run(
-        ['log', '-1', `--grep=${query}`, '--format=%H', sha],
+        ['log', '-1', `--grep=${query}`, '--format=%H\t%D', sha],
         cwd,
         signal,
       );
       if (output.trim()) {
-        this.store.upsertCommit(sha, source);
+        const [, decorators = ''] = output.trim().split('\t');
+        const headBranch = this._parseHeadBranch(decorators);
+        this.store.upsertCommit(sha, source, undefined, headBranch);
       }
     } else if (mode === 'filename') {
       const treeSha = (
@@ -270,6 +276,19 @@ export class SearchController {
       return choice === 'Continue';
     }
     return true;
+  }
+
+  private _parseHeadBranch(decorators: string): string | undefined {
+    if (!decorators.trim()) return undefined;
+    // Prefer the branch HEAD is on: "HEAD -> main" pattern
+    const arrowMatch = decorators.match(/HEAD\s*->\s*([^,]+)/);
+    if (arrowMatch) return arrowMatch[1].trim();
+    // Otherwise take first token that is a plain local ref (no slashes)
+    for (const token of decorators.split(',')) {
+      const t = token.trim().replace(/^HEAD,?\s*/, '');
+      if (t && !t.includes('/') && t !== 'HEAD') return t;
+    }
+    return undefined;
   }
 
   cancel(): void {

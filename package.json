@@ -2,7 +2,7 @@
   "name": "giteverywhere",
   "displayName": "GitEverywhere",
   "description": "Search anything, anywhere in your git history. Branches, reflog, stash, dangling commits, blobs — all in one place.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "boria8",
   "repository": {
     "type": "git",

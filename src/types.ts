@@ -27,6 +27,7 @@ export interface CommitResult {
   reachableFromHead: boolean;
   sources: ScanSource[];
   matchedPaths: string[];
+  headBranch?: string;
   // Fetched lazily when detail panel opens:
   changedFiles?: string;
   refsPointing?: string[];

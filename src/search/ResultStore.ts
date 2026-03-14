@@ -6,7 +6,7 @@ export class ResultStore extends EventEmitter {
   private blobs = new Map<string, BlobResult>();
   private trees = new Map<string, TreeResult>();
 
-  upsertCommit(sha: string, source: ScanSource, matchedPaths?: string[]): 'added' | 'merged' {
+  upsertCommit(sha: string, source: ScanSource, matchedPaths?: string[], headBranch?: string): 'added' | 'merged' {
     const existing = this.commits.get(sha);
     if (existing) {
       if (!existing.sources.includes(source)) {
@@ -18,6 +18,9 @@ export class ResultStore extends EventEmitter {
             existing.matchedPaths.push(p);
           }
         }
+      }
+      if (!existing.headBranch && headBranch) {
+        existing.headBranch = headBranch;
       }
       this.emit('change');
       return 'merged';
@@ -35,6 +38,7 @@ export class ResultStore extends EventEmitter {
       reachableFromHead: false,
       sources: [source],
       matchedPaths: matchedPaths ? [...matchedPaths] : [],
+      headBranch,
     };
     this.commits.set(sha, result);
     this.emit('change');

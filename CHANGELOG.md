@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.2] - 2026-03-14
+
+### Added
+- Results tree now shows matched file paths as expandable child nodes under each commit (content and filename search modes)
+- Branch name shown inline in commit description (e.g. `abc1234  Fixed bug · main`)
+
 ## [0.1.1] - 2026-03-13
 
 ### Fixed
