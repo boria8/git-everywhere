@@ -4,12 +4,17 @@ import { ResultStore } from '../search/ResultStore';
 import { CommitResult, BlobResult, TreeResult, ScanSource } from '../types';
 import { SOURCE_LABELS } from '../git/sources/types';
 
-// Four levels: groups → commits/blobs/trees → path children → line matches
-type TreeNode = GroupNode | CommitNode | BlobNode | TreeObjectNode | WelcomeNode | PathNode | LineNode;
+// Five levels: filter chips → groups → commits/blobs/trees → path children → line matches
+type TreeNode = FilterChipNode | GroupNode | CommitNode | BlobNode | TreeObjectNode | WelcomeNode | PathNode | LineNode;
 
 interface WelcomeNode {
   kind: 'welcome';
   message: string;
+}
+
+interface FilterChipNode {
+  kind: 'filterChip';
+  filter: string;
 }
 
 interface GroupNode {
@@ -54,11 +59,54 @@ export class SidebarTreeView implements vscode.TreeDataProvider<TreeNode> {
   private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private _hasSearchRun = false;
   private _isSearching = false;
+  private _filters: string[] = [];
 
   constructor(private readonly store: ResultStore) {
-    // Subscribe to store changes and debounce tree refresh
     store.on('change', () => this._scheduleRefresh());
   }
+
+  // --- Filter API ---
+
+  get filterCount(): number { return this._filters.length; }
+
+  get filteredCommitCount(): number {
+    return this._applyFilters(this.store.getCommits()).length;
+  }
+
+  addFilter(filter: string): void {
+    if (!this._filters.includes(filter)) {
+      this._filters.push(filter);
+      this._scheduleRefresh();
+    }
+  }
+
+  removeFilter(filter: string): void {
+    this._filters = this._filters.filter(f => f !== filter);
+    this._scheduleRefresh();
+  }
+
+  clearFilters(): void {
+    this._filters = [];
+    this._scheduleRefresh();
+  }
+
+  private _applyFilters(commits: CommitResult[]): CommitResult[] {
+    if (this._filters.length === 0) return commits;
+    return commits.filter(c =>
+      this._filters.every(f => {
+        const fl = f.toLowerCase();
+        return (
+          c.subject.toLowerCase().includes(fl) ||
+          c.sha.startsWith(fl) ||
+          c.matchedPaths.some(p => p.toLowerCase().includes(fl)) ||
+          (c.lineMatches ?? []).some(lm => lm.content.toLowerCase().includes(fl)) ||
+          (c.headBranch ?? '').toLowerCase().includes(fl)
+        );
+      }),
+    );
+  }
+
+  // --- Tree refresh ---
 
   private _scheduleRefresh(): void {
     if (this._debounceTimer) clearTimeout(this._debounceTimer);
@@ -69,15 +117,33 @@ export class SidebarTreeView implements vscode.TreeDataProvider<TreeNode> {
 
   setSearching(searching: boolean): void {
     this._isSearching = searching;
-    if (searching) this._hasSearchRun = true;
+    if (searching) {
+      this._hasSearchRun = true;
+      this._filters = []; // clear filters on new search
+    }
     this._onDidChangeTreeData.fire();
   }
 
-  // TreeDataProvider implementation
+  // --- TreeDataProvider ---
+
   getTreeItem(node: TreeNode): vscode.TreeItem {
     if (node.kind === 'welcome') {
       const item = new vscode.TreeItem(node.message, vscode.TreeItemCollapsibleState.None);
       item.iconPath = new vscode.ThemeIcon('info');
+      return item;
+    }
+
+    if (node.kind === 'filterChip') {
+      const item = new vscode.TreeItem(node.filter, vscode.TreeItemCollapsibleState.None);
+      item.description = 'click to remove';
+      item.tooltip = `Remove filter: "${node.filter}"`;
+      item.iconPath = new vscode.ThemeIcon('filter');
+      item.command = {
+        command: 'giteverywhere.removeFilter',
+        title: 'Remove Filter',
+        arguments: [node.filter],
+      };
+      item.contextValue = 'filterChip';
       return item;
     }
 
@@ -90,7 +156,6 @@ export class SidebarTreeView implements vscode.TreeDataProvider<TreeNode> {
           : vscode.TreeItemCollapsibleState.Collapsed,
       );
       item.description = `(${node.count})`;
-      // Warning icon for non-reachable sources
       const nonReachable: ScanSource[] = [
         'reflog', 'stash', 'danglingCommit', 'danglingTree', 'danglingBlob',
         'fetchHead', 'specialHeads', 'worktreeHeads',
@@ -109,7 +174,7 @@ export class SidebarTreeView implements vscode.TreeDataProvider<TreeNode> {
         ? vscode.TreeItemCollapsibleState.Expanded
         : vscode.TreeItemCollapsibleState.None;
       const item = new vscode.TreeItem(c.shortSha, collapsible);
-      const subject = c.subject || '(no subject yet)';
+      const subject = c.subject || '(no subject)';
       item.description = c.headBranch ? `${subject} · ${c.headBranch}` : subject;
       item.tooltip = `${c.sha}\nFound via: ${c.sources.join(', ')}`;
       const looksReachable = c.reachableFromHead || c.sources.includes('reachable');
@@ -176,19 +241,9 @@ export class SidebarTreeView implements vscode.TreeDataProvider<TreeNode> {
   }
 
   getChildren(node?: TreeNode): TreeNode[] {
-    if (!node) {
-      // Root level: show welcome/searching/empty state or groups
-      return this._getRootChildren();
-    }
-
-    if (node.kind === 'welcome') {
-      return [];
-    }
-
-    if (node.kind === 'group') {
-      return this._getGroupChildren(node.source);
-    }
-
+    if (!node) return this._getRootChildren();
+    if (node.kind === 'welcome' || node.kind === 'filterChip') return [];
+    if (node.kind === 'group') return this._getGroupChildren(node.source);
     if (node.kind === 'commit') {
       return node.commit.matchedPaths.map(p => ({
         kind: 'path' as const,
@@ -196,7 +251,6 @@ export class SidebarTreeView implements vscode.TreeDataProvider<TreeNode> {
         commit: node.commit,
       }));
     }
-
     if (node.kind === 'path') {
       return (node.commit.lineMatches ?? [])
         .filter(m => m.filePath === node.filePath)
@@ -208,7 +262,6 @@ export class SidebarTreeView implements vscode.TreeDataProvider<TreeNode> {
           commit: node.commit,
         }));
     }
-
     return [];
   }
 
@@ -217,29 +270,28 @@ export class SidebarTreeView implements vscode.TreeDataProvider<TreeNode> {
       return [{ kind: 'welcome', message: 'Click $(search) to search git history' }];
     }
 
-    const total = this.store.size;
-    if (total === 0 && !this._isSearching) {
-      return [{ kind: 'welcome', message: 'No results found. Try a different query or deeper scan depth.' }];
-    }
-
-    const commits = this.store.getCommits();
+    const filteredCommits = this._applyFilters(this.store.getCommits());
     const blobs = this.store.getBlobs();
     const trees = this.store.getTrees();
 
-    // Build groups for each source that has at least one result
-    // Keep all sources in canonical order so empty groups are visible
+    if (filteredCommits.length + blobs.length + trees.length === 0 && !this._isSearching) {
+      const msg = this._filters.length > 0
+        ? 'No results match the active filters. Click a filter to remove it.'
+        : 'No results found. Try a different query or deeper scan depth.';
+      return [...this._getFilterChips(), { kind: 'welcome', message: msg }];
+    }
+
     const allSources: ScanSource[] = [
       'reachable', 'reflog', 'stash',
       'danglingCommit', 'danglingTree', 'danglingBlob',
       'fetchHead', 'notes', 'specialHeads', 'worktreeHeads', 'objectStore',
     ];
 
-    return allSources
+    const groups = allSources
       .filter(source => {
-        // Only show sources that were actually scanned or have results
         if (source === 'danglingBlob') return blobs.some(b => b.sources.includes(source));
         if (source === 'danglingTree') return trees.some(t => t.sources.includes(source));
-        return commits.some(c => c.sources.includes(source));
+        return filteredCommits.some(c => c.sources.includes(source));
       })
       .map(source => {
         let count: number;
@@ -248,10 +300,16 @@ export class SidebarTreeView implements vscode.TreeDataProvider<TreeNode> {
         } else if (source === 'danglingTree') {
           count = trees.filter(t => t.sources.includes(source)).length;
         } else {
-          count = commits.filter(c => c.sources.includes(source)).length;
+          count = filteredCommits.filter(c => c.sources.includes(source)).length;
         }
         return { kind: 'group' as const, source, count };
       });
+
+    return [...this._getFilterChips(), ...groups];
+  }
+
+  private _getFilterChips(): FilterChipNode[] {
+    return this._filters.map(f => ({ kind: 'filterChip' as const, filter: f }));
   }
 
   private _getGroupChildren(source: ScanSource): TreeNode[] {
@@ -265,7 +323,7 @@ export class SidebarTreeView implements vscode.TreeDataProvider<TreeNode> {
         .filter(t => t.sources.includes(source))
         .map(tree => ({ kind: 'tree' as const, tree }));
     }
-    return this.store.getCommits()
+    return this._applyFilters(this.store.getCommits())
       .filter(c => c.sources.includes(source))
       .map(commit => ({ kind: 'commit' as const, commit }));
   }

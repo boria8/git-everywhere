@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.8] - 2026-03-14
+
+### Added
+- Chained filtering: after a search, add filters to narrow results without re-scanning
+  - $(filter-add) button appears in toolbar after search completes
+  - Active filters shown as chips at top of tree — click any chip to remove it
+  - Multiple filters use AND logic
+  - Filters match against subject, file paths, line content, branch name, SHA prefix
+  - Result count shows filtered/total e.g. "3/12 (2 filters)"
+  - $(filter-filled) button clears all filters at once
+  - Filters reset automatically when a new search starts
+
 ## [0.1.7] - 2026-03-14
 
 ### Added

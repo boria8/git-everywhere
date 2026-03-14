@@ -2,7 +2,7 @@
   "name": "giteverywhere",
   "displayName": "GitEverywhere",
   "description": "Search anything, anywhere in your git history. Branches, reflog, stash, dangling commits, blobs — all in one place.",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "publisher": "boria8",
   "icon": "images/icon.png",
   "repository": {
@@ -15,9 +15,7 @@
   "categories": [
     "SCM Providers"
   ],
-  "activationEvents": [
-    "onView:gitEverywhereExplorer"
-  ],
+  "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
     "viewsContainers": {
@@ -78,6 +76,20 @@
         "command": "giteverywhere.toggleCaseInsensitive",
         "title": "Toggle Case-Insensitive Search",
         "icon": "$(case-sensitive)"
+      },
+      {
+        "command": "giteverywhere.addFilter",
+        "title": "Add Filter",
+        "icon": "$(filter-add)"
+      },
+      {
+        "command": "giteverywhere.removeFilter",
+        "title": "Remove Filter"
+      },
+      {
+        "command": "giteverywhere.clearFilters",
+        "title": "Clear All Filters",
+        "icon": "$(filter-filled)"
       }
     ],
     "viewsWelcome": [
@@ -112,6 +124,16 @@
         {
           "command": "giteverywhere.toggleCaseInsensitive",
           "when": "view == gitEverywhereExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "giteverywhere.addFilter",
+          "when": "view == gitEverywhereExplorer && giteverywhere.hasResults && !giteverywhere.searching",
+          "group": "navigation"
+        },
+        {
+          "command": "giteverywhere.clearFilters",
+          "when": "view == gitEverywhereExplorer && giteverywhere.hasFilters",
           "group": "navigation"
         }
       ],

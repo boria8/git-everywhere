@@ -42,6 +42,22 @@ export function activate(context: vscode.ExtensionContext): void {
   // Detect repo on startup
   repoDetector.detect();
 
+  // Track last search for message updates
+  let lastQuery = '';
+  let lastCiNote = '';
+
+  function updateResultMessage(): void {
+    if (!lastQuery) return;
+    const total = store.getCommits().length;
+    const fc = treeView.filterCount;
+    if (fc > 0) {
+      const filtered = treeView.filteredCommitCount;
+      vsTreeView.message = `"${lastQuery}"${lastCiNote} — ${filtered}/${total} (${fc} filter${fc === 1 ? '' : 's'})`;
+    } else {
+      vsTreeView.message = `"${lastQuery}"${lastCiNote} — ${total} result${total === 1 ? '' : 's'}`;
+    }
+  }
+
   // Helper: execute a search run
   type HistoryEntry = { query: string; mode: SearchMode; depth: ScanDepth };
   async function runSearch(query: string, mode: SearchMode, depth: ScanDepth, cwd: string): Promise<void> {
@@ -50,7 +66,10 @@ export function activate(context: vscode.ExtensionContext): void {
       caseInsensitive: cfg.get<boolean>('caseInsensitive', false),
       remoteMode: cfg.get<'none' | 'check' | 'fetch'>('remoteMode', 'none'),
     };
+    lastQuery = query;
+    lastCiNote = searchOptions.caseInsensitive ? ' (case-insensitive)' : '';
     await vscode.commands.executeCommand('setContext', 'giteverywhere.searching', true);
+    await vscode.commands.executeCommand('setContext', 'giteverywhere.hasFilters', false);
     treeView.setSearching(true);
     vsTreeView.message = `Searching: "${query}"`;
     await vscode.window.withProgress(
@@ -65,8 +84,7 @@ export function activate(context: vscode.ExtensionContext): void {
           treeView.setSearching(false);
           const total = store.size;
           await vscode.commands.executeCommand('setContext', 'giteverywhere.hasResults', total > 0);
-          const ciNote = searchOptions.caseInsensitive ? ' (case-insensitive)' : '';
-          vsTreeView.message = `"${query}"${ciNote} — ${total} result${total === 1 ? '' : 's'}`;
+          updateResultMessage();
           outputChannel.appendLine(`Search complete. ${total} result(s) found.`);
         }
       },
@@ -170,6 +188,33 @@ export function activate(context: vscode.ExtensionContext): void {
         `GitEverywhere: Case-insensitive ${!current ? 'ON' : 'OFF'}`,
         3000,
       );
+    }),
+  );
+
+  // Filter commands
+  context.subscriptions.push(
+    vscode.commands.registerCommand('giteverywhere.addFilter', async () => {
+      const filter = await vscode.window.showInputBox({
+        placeHolder: 'Filter results by string...',
+        title: 'GitEverywhere — Add Filter',
+        prompt: 'Filters are applied on top of the current results (AND logic)',
+        validateInput: v => v.trim() ? null : 'Please enter a filter string',
+      });
+      if (!filter) return;
+      treeView.addFilter(filter.trim());
+      await vscode.commands.executeCommand('setContext', 'giteverywhere.hasFilters', true);
+      updateResultMessage();
+    }),
+    vscode.commands.registerCommand('giteverywhere.removeFilter', (filter: string) => {
+      treeView.removeFilter(filter);
+      const hasFilters = treeView.filterCount > 0;
+      vscode.commands.executeCommand('setContext', 'giteverywhere.hasFilters', hasFilters);
+      updateResultMessage();
+    }),
+    vscode.commands.registerCommand('giteverywhere.clearFilters', () => {
+      treeView.clearFilters();
+      vscode.commands.executeCommand('setContext', 'giteverywhere.hasFilters', false);
+      updateResultMessage();
     }),
   );
 
