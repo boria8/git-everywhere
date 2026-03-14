@@ -28,6 +28,7 @@ export interface CommitResult {
   sources: ScanSource[];
   matchedPaths: string[];
   headBranch?: string;
+  lineMatches?: Array<{ filePath: string; lineNum: number; content: string }>;
   // Fetched lazily when detail panel opens:
   changedFiles?: string;
   refsPointing?: string[];

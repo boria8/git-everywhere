@@ -221,7 +221,32 @@ export class SearchController {
         const [, decorators = ''] = lines[0].split('\t');
         const matchedPaths = lines.slice(1);
         const headBranch = this._parseHeadBranch(decorators);
-        this.store.upsertCommit(sha, source, matchedPaths.length > 0 ? matchedPaths : undefined, headBranch);
+        const lineMatches: Array<{ filePath: string; lineNum: number; content: string }> = [];
+        for (const filePath of matchedPaths) {
+          if (signal.aborted) return;
+          const grepOut = await this.gitRunner.run(
+            ['grep', '-F', '-n', query, sha, '--', filePath],
+            cwd,
+            signal,
+          );
+          for (const grepLine of grepOut.split('\n').filter(Boolean)) {
+            // format: sha:filepath:linenum:content
+            const colonIdx1 = grepLine.indexOf(':');
+            const colonIdx2 = grepLine.indexOf(':', colonIdx1 + 1);
+            const colonIdx3 = grepLine.indexOf(':', colonIdx2 + 1);
+            if (colonIdx3 > 0) {
+              const lineNum = parseInt(grepLine.slice(colonIdx2 + 1, colonIdx3), 10);
+              const content = grepLine.slice(colonIdx3 + 1).trim();
+              if (!isNaN(lineNum)) lineMatches.push({ filePath, lineNum, content });
+            }
+          }
+        }
+        this.store.upsertCommit(
+          sha, source,
+          matchedPaths.length > 0 ? matchedPaths : undefined,
+          headBranch,
+          lineMatches.length > 0 ? lineMatches : undefined,
+        );
       }
     } else if (mode === 'commitMessage') {
       const output = await this.gitRunner.run(

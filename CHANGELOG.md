@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.3] - 2026-03-14
+
+### Added
+- Matching lines shown as grandchildren under each file node (content search): `L42  if (parser.parse(input) === null)`
+- Clicking any line node opens the commit detail panel
+
 ## [0.1.2] - 2026-03-14
 
 ### Added

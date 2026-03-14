@@ -4,8 +4,8 @@ import { ResultStore } from '../search/ResultStore';
 import { CommitResult, BlobResult, TreeResult, ScanSource } from '../types';
 import { SOURCE_LABELS } from '../git/sources/types';
 
-// Three levels of tree items: groups → commits/blobs/trees → path children
-type TreeNode = GroupNode | CommitNode | BlobNode | TreeObjectNode | WelcomeNode | PathNode;
+// Four levels: groups → commits/blobs/trees → path children → line matches
+type TreeNode = GroupNode | CommitNode | BlobNode | TreeObjectNode | WelcomeNode | PathNode | LineNode;
 
 interface WelcomeNode {
   kind: 'welcome';
@@ -35,6 +35,14 @@ interface TreeObjectNode {
 
 interface PathNode {
   kind: 'path';
+  filePath: string;
+  commit: CommitResult;
+}
+
+interface LineNode {
+  kind: 'line';
+  lineNum: number;
+  content: string;
   filePath: string;
   commit: CommitResult;
 }
@@ -119,7 +127,11 @@ export class SidebarTreeView implements vscode.TreeDataProvider<TreeNode> {
     if (node.kind === 'path') {
       const basename = path.basename(node.filePath);
       const dirname = path.dirname(node.filePath);
-      const item = new vscode.TreeItem(basename, vscode.TreeItemCollapsibleState.None);
+      const lines = node.commit.lineMatches?.filter(m => m.filePath === node.filePath) ?? [];
+      const collapsible = lines.length > 0
+        ? vscode.TreeItemCollapsibleState.Expanded
+        : vscode.TreeItemCollapsibleState.None;
+      const item = new vscode.TreeItem(basename, collapsible);
       item.description = dirname === '.' ? undefined : dirname;
       item.tooltip = node.filePath;
       item.iconPath = new vscode.ThemeIcon('file');
@@ -139,11 +151,25 @@ export class SidebarTreeView implements vscode.TreeDataProvider<TreeNode> {
       return item;
     }
 
-    // tree object
-    const item = new vscode.TreeItem(node.tree.sha.slice(0, 7), vscode.TreeItemCollapsibleState.None);
-    item.description = 'dangling tree';
-    item.iconPath = new vscode.ThemeIcon('warning', new vscode.ThemeColor('list.warningForeground'));
-    item.tooltip = `Tree SHA: ${node.tree.sha}`;
+    if (node.kind === 'tree') {
+      const item = new vscode.TreeItem(node.tree.sha.slice(0, 7), vscode.TreeItemCollapsibleState.None);
+      item.description = 'dangling tree';
+      item.iconPath = new vscode.ThemeIcon('warning', new vscode.ThemeColor('list.warningForeground'));
+      item.tooltip = `Tree SHA: ${node.tree.sha}`;
+      return item;
+    }
+
+    // line match
+    const content = node.content.length > 60 ? node.content.slice(0, 60) + '…' : node.content;
+    const item = new vscode.TreeItem(`L${node.lineNum}`, vscode.TreeItemCollapsibleState.None);
+    item.description = content;
+    item.tooltip = `${node.filePath}:${node.lineNum}\n${node.content}`;
+    item.iconPath = new vscode.ThemeIcon('dash');
+    item.command = {
+      command: 'giteverywhere.showDetail',
+      title: 'Show Detail',
+      arguments: [node.commit.sha],
+    };
     return item;
   }
 
@@ -167,6 +193,18 @@ export class SidebarTreeView implements vscode.TreeDataProvider<TreeNode> {
         filePath: p,
         commit: node.commit,
       }));
+    }
+
+    if (node.kind === 'path') {
+      return (node.commit.lineMatches ?? [])
+        .filter(m => m.filePath === node.filePath)
+        .map(m => ({
+          kind: 'line' as const,
+          lineNum: m.lineNum,
+          content: m.content,
+          filePath: m.filePath,
+          commit: node.commit,
+        }));
     }
 
     return [];
