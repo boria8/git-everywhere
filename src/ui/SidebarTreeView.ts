@@ -135,6 +135,7 @@ export class SidebarTreeView implements vscode.TreeDataProvider<TreeNode> {
       item.description = dirname === '.' ? undefined : dirname;
       item.tooltip = node.filePath;
       item.iconPath = new vscode.ThemeIcon('file');
+      item.contextValue = 'pathResult';
       item.command = {
         command: 'giteverywhere.showDetail',
         title: 'Show Detail',
@@ -166,9 +167,9 @@ export class SidebarTreeView implements vscode.TreeDataProvider<TreeNode> {
     item.tooltip = `${node.filePath}:${node.lineNum}\n${node.content}`;
     item.iconPath = new vscode.ThemeIcon('dash');
     item.command = {
-      command: 'giteverywhere.showDetail',
-      title: 'Show Detail',
-      arguments: [node.commit.sha],
+      command: 'giteverywhere.openAtLine',
+      title: 'Open File at Line',
+      arguments: [node.commit.sha, node.filePath, node.lineNum],
     };
     return item;
   }

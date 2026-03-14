@@ -8,6 +8,7 @@ import { SidebarTreeView } from './ui/SidebarTreeView';
 import { ActionExecutor } from './ui/ActionExecutor';
 import { DetailPanel } from './ui/DetailPanel';
 import { SearchMode, ScanDepth } from './types';
+import { SearchOptions } from './search/SearchController';
 
 function resolveGitPath(): string {
   // Prefer the path VS Code's own git extension already resolved (works on Mac/Linux/Windows)
@@ -50,6 +51,9 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
 
+      // Load persisted last search
+      const last = context.workspaceState.get<{ query: string; mode: SearchMode; depth: ScanDepth }>('lastSearch');
+
       // Mode picker
       type ModeItem = vscode.QuickPickItem & { value: SearchMode };
       const modeItems: ModeItem[] = [
@@ -57,6 +61,10 @@ export function activate(context: vscode.ExtensionContext): void {
         { label: '$(git-commit) Commit message', description: 'Search commit messages', value: 'commitMessage' },
         { label: '$(file) Filename / path', description: 'Search file names across all history', value: 'filename' },
       ];
+      if (last?.mode) {
+        const idx = modeItems.findIndex(i => i.value === last.mode);
+        if (idx > 0) modeItems.unshift(...modeItems.splice(idx, 1));
+      }
       const modeChoice = await vscode.window.showQuickPick<ModeItem>(modeItems, {
         placeHolder: 'How do you want to search?',
         title: 'GitEverywhere — Search Mode',
@@ -67,6 +75,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const query = await vscode.window.showInputBox({
         placeHolder: 'Enter search string...',
         title: `GitEverywhere — ${modeChoice.label}`,
+        value: last?.query ?? '',
         validateInput: (v) => v.trim() ? null : 'Please enter a search string',
       });
       if (!query) return;
@@ -78,16 +87,30 @@ export function activate(context: vscode.ExtensionContext): void {
         { label: '$(search) Deep', description: '+ dangling objects, FETCH_HEAD, notes, special heads — 10-30s', value: 'deep' },
         { label: '$(database) Full', description: '+ entire object store — slow on large repos', value: 'full' },
       ];
-      const defaultDepth = vscode.workspace.getConfiguration('giteverywhere').get<ScanDepth>('defaultScanDepth', 'fast');
+      if (last?.depth) {
+        const idx = depthItems.findIndex(i => i.value === last.depth);
+        if (idx > 0) depthItems.unshift(...depthItems.splice(idx, 1));
+      }
       const depthChoice = await vscode.window.showQuickPick<DepthItem>(depthItems, {
         placeHolder: 'Select scan depth',
         title: 'GitEverywhere — Scan Depth',
       });
       if (!depthChoice) return;
 
+      // Persist this search
+      await context.workspaceState.update('lastSearch', { query, mode: modeChoice.value, depth: depthChoice.value });
+
+      // Read settings
+      const cfg = vscode.workspace.getConfiguration('giteverywhere');
+      const searchOptions: SearchOptions = {
+        caseInsensitive: cfg.get<boolean>('caseInsensitive', false),
+        remoteMode: cfg.get<'none' | 'check' | 'fetch'>('remoteMode', 'none'),
+      };
+
       // Run search
       await vscode.commands.executeCommand('setContext', 'giteverywhere.searching', true);
       treeView.setSearching(true);
+      vsTreeView.message = `Searching: "${query}"`;
 
       await vscode.window.withProgress(
         {
@@ -99,12 +122,14 @@ export function activate(context: vscode.ExtensionContext): void {
           try {
             await controller.search(query, modeChoice.value, depthChoice.value, cwd, (p) => {
               progress.report({ message: `Scanning ${p.phase}… (${p.count} found)` });
-            });
+            }, searchOptions);
           } finally {
             await vscode.commands.executeCommand('setContext', 'giteverywhere.searching', false);
             treeView.setSearching(false);
             const total = store.size;
             await vscode.commands.executeCommand('setContext', 'giteverywhere.hasResults', total > 0);
+            const ciNote = searchOptions.caseInsensitive ? ' (case-insensitive)' : '';
+            vsTreeView.message = `"${query}"${ciNote} — ${total} result${total === 1 ? '' : 's'}`;
             outputChannel.appendLine(`Search complete. ${total} result(s) found.`);
           }
         },
@@ -140,6 +165,7 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.commands.executeCommand('setContext', 'giteverywhere.searching', false);
       vscode.commands.executeCommand('setContext', 'giteverywhere.hasResults', false);
       treeView.setSearching(false);
+      vsTreeView.message = undefined;
     }),
   );
 
@@ -157,6 +183,36 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('giteverywhere.copysha', async (sha: string) => {
       await vscode.env.clipboard.writeText(sha);
       vscode.window.setStatusBarMessage('SHA copied to clipboard', 2000);
+    }),
+  );
+
+  // Copy path command (right-click on file node)
+  context.subscriptions.push(
+    vscode.commands.registerCommand('giteverywhere.copyPath', async (node: { filePath?: string }) => {
+      if (node?.filePath) {
+        await vscode.env.clipboard.writeText(node.filePath);
+        vscode.window.setStatusBarMessage('Path copied to clipboard', 2000);
+      }
+    }),
+  );
+
+  // Open file at line (click on line match node)
+  context.subscriptions.push(
+    vscode.commands.registerCommand('giteverywhere.openAtLine', async (sha: string, filePath: string, lineNum: number) => {
+      const cwd = repoDetector.repoRoot;
+      if (!cwd) return;
+      const absPath = path.join(cwd, filePath);
+      try {
+        const doc = await vscode.workspace.openTextDocument(absPath);
+        const editor = await vscode.window.showTextDocument(doc);
+        const line = Math.max(0, lineNum - 1);
+        const pos = new vscode.Position(line, 0);
+        editor.selection = new vscode.Selection(pos, pos);
+        editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+      } catch {
+        // File doesn't exist in working tree — fall back to detail panel
+        DetailPanel.show(sha, store, gitRunner, executor, context.extensionUri, cwd);
+      }
     }),
   );
 

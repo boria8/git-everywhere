@@ -2,7 +2,7 @@
   "name": "giteverywhere",
   "displayName": "GitEverywhere",
   "description": "Search anything, anywhere in your git history. Branches, reflog, stash, dangling commits, blobs — all in one place.",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publisher": "boria8",
   "icon": "images/icon.png",
   "repository": {
@@ -62,6 +62,14 @@
         "title": "Copy SHA"
       },
       {
+        "command": "giteverywhere.copyPath",
+        "title": "Copy Path"
+      },
+      {
+        "command": "giteverywhere.openAtLine",
+        "title": "Open File at Line"
+      },
+      {
         "command": "giteverywhere.switchRepo",
         "title": "Switch Repository",
         "icon": "$(repo)"
@@ -102,6 +110,11 @@
           "command": "giteverywhere.copysha",
           "when": "viewItem == commitResult",
           "group": "giteverywhere"
+        },
+        {
+          "command": "giteverywhere.copyPath",
+          "when": "viewItem == pathResult",
+          "group": "giteverywhere"
         }
       ]
     },
@@ -110,13 +123,25 @@
       "properties": {
         "giteverywhere.defaultScanDepth": {
           "type": "string",
-          "enum": [
-            "fast",
-            "deep",
-            "full"
-          ],
+          "enum": ["fast", "deep", "full"],
           "default": "fast",
           "description": "Default scan depth for searches"
+        },
+        "giteverywhere.caseInsensitive": {
+          "type": "boolean",
+          "default": false,
+          "description": "Search case-insensitively (applies to content and commit message modes)"
+        },
+        "giteverywhere.remoteMode": {
+          "type": "string",
+          "enum": ["none", "check", "fetch"],
+          "enumDescriptions": [
+            "Never touch the remote — pure local search (default)",
+            "Check if remote has new commits and show a warning, but do not fetch",
+            "Run git fetch --all before every search"
+          ],
+          "default": "none",
+          "description": "Controls whether GitEverywhere interacts with the remote before searching"
         }
       }
     }

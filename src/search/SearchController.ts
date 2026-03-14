@@ -14,8 +14,14 @@ import { specialHeads } from '../git/commands/specialHeads';
 import { worktreeHeads } from '../git/commands/worktreeHeads';
 import { catFile } from '../git/commands/catFile';
 
+export interface SearchOptions {
+  caseInsensitive?: boolean;
+  remoteMode?: 'none' | 'check' | 'fetch';
+}
+
 export class SearchController {
   private abortController: AbortController | null = null;
+  private caseInsensitive = false;
 
   constructor(
     private readonly gitRunner: GitRunner,
@@ -29,11 +35,41 @@ export class SearchController {
     depth: ScanDepth,
     cwd: string,
     onProgress: (progress: SearchProgress) => void,
+    options: SearchOptions = {},
   ): Promise<void> {
     this.cancel();
     this.store.clear();
     this.abortController = new AbortController();
     const signal = this.abortController.signal;
+    this.caseInsensitive = options.caseInsensitive ?? false;
+    const remoteMode = options.remoteMode ?? 'none';
+
+    // Handle remote mode before scanning
+    if (remoteMode === 'fetch') {
+      try {
+        await this.gitRunner.run(['fetch', '--all', '--quiet'], cwd, signal);
+      } catch (err) {
+        this.outputChannel.appendLine(`[remote] fetch failed: ${String(err)}`);
+      }
+    } else if (remoteMode === 'check') {
+      try {
+        const remoteOut = await this.gitRunner.run(['ls-remote', 'origin', 'HEAD'], cwd, signal);
+        const remoteSha = remoteOut.split('\t')[0].trim();
+        const localSha = (await this.gitRunner.run(['rev-parse', '--verify', 'refs/remotes/origin/HEAD'], cwd, signal)).trim();
+        if (remoteSha && localSha && remoteSha !== localSha) {
+          vscode.window.showInformationMessage(
+            'GitEverywhere: Remote has new commits not yet fetched. Enable "Fetch before search" to include them.',
+            'Fetch now',
+          ).then(choice => {
+            if (choice === 'Fetch now') {
+              this.gitRunner.run(['fetch', '--all', '--quiet'], cwd).catch(() => {});
+            }
+          });
+        }
+      } catch {
+        // No origin or no tracking ref — silently ignore
+      }
+    }
 
     const sources = SCAN_DEPTH_SOURCES[depth];
     const treeCache = new Map<string, string[]>();
@@ -211,8 +247,9 @@ export class SearchController {
     if (signal.aborted) return;
 
     if (mode === 'content') {
+      const ciFlag = this.caseInsensitive ? ['-i'] : [];
       const output = await this.gitRunner.run(
-        ['log', '-1', `-S${query}`, '--name-only', '--format=%H\t%D', sha],
+        ['log', '-1', `-S${query}`, ...ciFlag, '--name-only', '--format=%H\t%D', sha],
         cwd,
         signal,
       );
@@ -224,11 +261,10 @@ export class SearchController {
         const lineMatches: Array<{ filePath: string; lineNum: number; content: string }> = [];
         for (const filePath of matchedPaths) {
           if (signal.aborted) return;
-          const grepOut = await this.gitRunner.run(
-            ['grep', '-F', '-n', query, sha, '--', filePath],
-            cwd,
-            signal,
-          );
+          const grepArgs = this.caseInsensitive
+            ? ['grep', '-F', '-i', '-n', query, sha, '--', filePath]
+            : ['grep', '-F', '-n', query, sha, '--', filePath];
+          const grepOut = await this.gitRunner.run(grepArgs, cwd, signal);
           for (const grepLine of grepOut.split('\n').filter(Boolean)) {
             // format: sha:filepath:linenum:content
             const colonIdx1 = grepLine.indexOf(':');
@@ -249,8 +285,9 @@ export class SearchController {
         );
       }
     } else if (mode === 'commitMessage') {
+      const ciFlag = this.caseInsensitive ? ['-i'] : [];
       const output = await this.gitRunner.run(
-        ['log', '-1', `--grep=${query}`, '--format=%H\t%D', sha],
+        ['log', '-1', `--grep=${query}`, ...ciFlag, '--format=%H\t%D', sha],
         cwd,
         signal,
       );

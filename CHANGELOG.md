@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.5] - 2026-03-14
+
+### Added
+- Click a matched line (L42) to open the file at that line in the editor; falls back to detail panel if file no longer exists
+- Case-insensitive search: toggle `giteverywhere.caseInsensitive` in settings
+- Active query shown in sidebar header after search (e.g. `"parseToken" — 5 results`)
+- Right-click a file node → Copy Path
+- Last search (query, mode, depth) persisted across VS Code restarts; pre-filled on next search
+- Remote mode setting `giteverywhere.remoteMode`: `none` (default, no network), `check` (warn if remote has new commits), `fetch` (auto-fetch before search)
+
 ## [0.1.4] - 2026-03-14
 
 ### Added
