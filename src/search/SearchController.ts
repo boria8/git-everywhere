@@ -248,14 +248,17 @@ export class SearchController {
 
     if (mode === 'content') {
       const ciFlag = this.caseInsensitive ? ['-i'] : [];
+      // %x00 as separator so subjects with tabs/special chars parse correctly
       const output = await this.gitRunner.run(
-        ['log', '-1', `-S${query}`, ...ciFlag, '--name-only', '--format=%H\t%D', sha],
+        ['log', '-1', `-S${query}`, ...ciFlag, '--name-only', '--format=%H%x00%D%x00%s', sha],
         cwd,
         signal,
       );
       const lines = output.split('\n').map(l => l.trim()).filter(Boolean);
       if (lines.length > 0) {
-        const [, decorators = ''] = lines[0].split('\t');
+        const parts = lines[0].split('\0');
+        const decorators = parts[1] ?? '';
+        const subject = parts[2] ?? '';
         const matchedPaths = lines.slice(1);
         const headBranch = this._parseHeadBranch(decorators);
         const lineMatches: Array<{ filePath: string; lineNum: number; content: string }> = [];
@@ -282,19 +285,22 @@ export class SearchController {
           matchedPaths.length > 0 ? matchedPaths : undefined,
           headBranch,
           lineMatches.length > 0 ? lineMatches : undefined,
+          subject || undefined,
         );
       }
     } else if (mode === 'commitMessage') {
       const ciFlag = this.caseInsensitive ? ['-i'] : [];
       const output = await this.gitRunner.run(
-        ['log', '-1', `--grep=${query}`, ...ciFlag, '--format=%H\t%D', sha],
+        ['log', '-1', `--grep=${query}`, ...ciFlag, '--format=%H%x00%D%x00%s', sha],
         cwd,
         signal,
       );
       if (output.trim()) {
-        const [, decorators = ''] = output.trim().split('\t');
+        const parts = output.trim().split('\0');
+        const decorators = parts[1] ?? '';
+        const subject = parts[2] ?? '';
         const headBranch = this._parseHeadBranch(decorators);
-        this.store.upsertCommit(sha, source, undefined, headBranch);
+        this.store.upsertCommit(sha, source, undefined, headBranch, undefined, subject || undefined);
       }
     } else if (mode === 'filename') {
       const treeSha = (
@@ -316,7 +322,8 @@ export class SearchController {
       }
 
       if (matchedPaths.length > 0) {
-        this.store.upsertCommit(sha, source, matchedPaths);
+        const subject = (await this.gitRunner.run(['log', '-1', '--format=%s', sha], cwd, signal)).trim();
+        this.store.upsertCommit(sha, source, matchedPaths, undefined, undefined, subject || undefined);
       }
     }
   }

@@ -12,6 +12,7 @@ export class ResultStore extends EventEmitter {
     matchedPaths?: string[],
     headBranch?: string,
     lineMatches?: CommitResult['lineMatches'],
+    subject?: string,
   ): 'added' | 'merged' {
     const existing = this.commits.get(sha);
     if (existing) {
@@ -27,6 +28,9 @@ export class ResultStore extends EventEmitter {
       }
       if (!existing.headBranch && headBranch) {
         existing.headBranch = headBranch;
+      }
+      if (!existing.subject && subject) {
+        existing.subject = subject;
       }
       if (lineMatches) {
         if (!existing.lineMatches) existing.lineMatches = [];
@@ -44,7 +48,7 @@ export class ResultStore extends EventEmitter {
     const result: CommitResult = {
       sha,
       shortSha: sha.slice(0, 7),
-      subject: '',
+      subject: subject ?? '',
       authorName: '',
       authorEmail: '',
       authorDate: '',

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.6] - 2026-03-14
+
+### Fixed
+- Commit subjects now shown in tree during scan (was always "no subject yet")
+- Reachable commits now show green icon instead of warning icon
+
 ## [0.1.5] - 2026-03-14
 
 ### Added

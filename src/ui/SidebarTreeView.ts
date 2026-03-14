@@ -112,7 +112,8 @@ export class SidebarTreeView implements vscode.TreeDataProvider<TreeNode> {
       const subject = c.subject || '(no subject yet)';
       item.description = c.headBranch ? `${subject} · ${c.headBranch}` : subject;
       item.tooltip = `${c.sha}\nFound via: ${c.sources.join(', ')}`;
-      item.iconPath = c.reachableFromHead
+      const looksReachable = c.reachableFromHead || c.sources.includes('reachable');
+      item.iconPath = looksReachable
         ? new vscode.ThemeIcon('git-commit')
         : new vscode.ThemeIcon('warning', new vscode.ThemeColor('list.warningForeground'));
       item.command = {
