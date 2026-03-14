@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.7] - 2026-03-14
+
+### Added
+- Search history: last 10 searches shown as quick-pick on next search
+- Case-insensitive toggle button in sidebar toolbar
+- Cancel button visible in toolbar while search is running
+
+### Fixed
+- vitest.config.ts no longer included in VSIX
+
 ## [0.1.6] - 2026-03-14
 
 ### Fixed

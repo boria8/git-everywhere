@@ -42,6 +42,37 @@ export function activate(context: vscode.ExtensionContext): void {
   // Detect repo on startup
   repoDetector.detect();
 
+  // Helper: execute a search run
+  type HistoryEntry = { query: string; mode: SearchMode; depth: ScanDepth };
+  async function runSearch(query: string, mode: SearchMode, depth: ScanDepth, cwd: string): Promise<void> {
+    const cfg = vscode.workspace.getConfiguration('giteverywhere');
+    const searchOptions: SearchOptions = {
+      caseInsensitive: cfg.get<boolean>('caseInsensitive', false),
+      remoteMode: cfg.get<'none' | 'check' | 'fetch'>('remoteMode', 'none'),
+    };
+    await vscode.commands.executeCommand('setContext', 'giteverywhere.searching', true);
+    treeView.setSearching(true);
+    vsTreeView.message = `Searching: "${query}"`;
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Window, title: 'GitEverywhere', cancellable: false },
+      async (progress) => {
+        try {
+          await controller.search(query, mode, depth, cwd, (p) => {
+            progress.report({ message: `Scanning ${p.phase}… (${p.count} found)` });
+          }, searchOptions);
+        } finally {
+          await vscode.commands.executeCommand('setContext', 'giteverywhere.searching', false);
+          treeView.setSearching(false);
+          const total = store.size;
+          await vscode.commands.executeCommand('setContext', 'giteverywhere.hasResults', total > 0);
+          const ciNote = searchOptions.caseInsensitive ? ' (case-insensitive)' : '';
+          vsTreeView.message = `"${query}"${ciNote} — ${total} result${total === 1 ? '' : 's'}`;
+          outputChannel.appendLine(`Search complete. ${total} result(s) found.`);
+        }
+      },
+    );
+  }
+
   // Search command
   context.subscriptions.push(
     vscode.commands.registerCommand('giteverywhere.startSearch', async () => {
@@ -51,10 +82,32 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
 
-      // Load persisted last search
-      const last = context.workspaceState.get<{ query: string; mode: SearchMode; depth: ScanDepth }>('lastSearch');
+      // Show history picker if history exists
+      const history = context.workspaceState.get<HistoryEntry[]>('searchHistory', []);
+      type HistoryItem = vscode.QuickPickItem & { isNew?: boolean; entry?: HistoryEntry };
+      if (history.length > 0) {
+        const historyItems: HistoryItem[] = [
+          { label: '$(add) New search...', isNew: true },
+          { label: '', kind: vscode.QuickPickItemKind.Separator },
+          ...history.map(h => ({
+            label: h.query,
+            description: `${h.mode} · ${h.depth}`,
+            entry: h,
+          })),
+        ];
+        const pick = await vscode.window.showQuickPick<HistoryItem>(historyItems, {
+          title: 'GitEverywhere — Recent Searches',
+          placeHolder: 'Pick a recent search or start new',
+        });
+        if (!pick) return;
+        if (!pick.isNew && pick.entry) {
+          await runSearch(pick.entry.query, pick.entry.mode, pick.entry.depth, cwd);
+          return;
+        }
+      }
 
-      // Mode picker
+      // New search flow
+      const last = history[0];
       type ModeItem = vscode.QuickPickItem & { value: SearchMode };
       const modeItems: ModeItem[] = [
         { label: '$(search) Content', description: 'Search code/text across all history', value: 'content' },
@@ -71,7 +124,6 @@ export function activate(context: vscode.ExtensionContext): void {
       });
       if (!modeChoice) return;
 
-      // Query input
       const query = await vscode.window.showInputBox({
         placeHolder: 'Enter search string...',
         title: `GitEverywhere — ${modeChoice.label}`,
@@ -80,7 +132,6 @@ export function activate(context: vscode.ExtensionContext): void {
       });
       if (!query) return;
 
-      // Depth picker
       type DepthItem = vscode.QuickPickItem & { value: ScanDepth };
       const depthItems: DepthItem[] = [
         { label: '$(zap) Fast', description: 'Branches, reflog, stash — seconds', value: 'fast' },
@@ -97,42 +148,27 @@ export function activate(context: vscode.ExtensionContext): void {
       });
       if (!depthChoice) return;
 
-      // Persist this search
-      await context.workspaceState.update('lastSearch', { query, mode: modeChoice.value, depth: depthChoice.value });
+      // Save to history (deduplicated, max 10)
+      const newEntry: HistoryEntry = { query, mode: modeChoice.value, depth: depthChoice.value };
+      const updated = [
+        newEntry,
+        ...history.filter(h => !(h.query === query && h.mode === modeChoice.value && h.depth === depthChoice.value)),
+      ].slice(0, 10);
+      await context.workspaceState.update('searchHistory', updated);
 
-      // Read settings
+      await runSearch(query, modeChoice.value, depthChoice.value, cwd);
+    }),
+  );
+
+  // Toggle case-insensitive command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('giteverywhere.toggleCaseInsensitive', async () => {
       const cfg = vscode.workspace.getConfiguration('giteverywhere');
-      const searchOptions: SearchOptions = {
-        caseInsensitive: cfg.get<boolean>('caseInsensitive', false),
-        remoteMode: cfg.get<'none' | 'check' | 'fetch'>('remoteMode', 'none'),
-      };
-
-      // Run search
-      await vscode.commands.executeCommand('setContext', 'giteverywhere.searching', true);
-      treeView.setSearching(true);
-      vsTreeView.message = `Searching: "${query}"`;
-
-      await vscode.window.withProgress(
-        {
-          location: vscode.ProgressLocation.Window,
-          title: 'GitEverywhere',
-          cancellable: false,
-        },
-        async (progress) => {
-          try {
-            await controller.search(query, modeChoice.value, depthChoice.value, cwd, (p) => {
-              progress.report({ message: `Scanning ${p.phase}… (${p.count} found)` });
-            }, searchOptions);
-          } finally {
-            await vscode.commands.executeCommand('setContext', 'giteverywhere.searching', false);
-            treeView.setSearching(false);
-            const total = store.size;
-            await vscode.commands.executeCommand('setContext', 'giteverywhere.hasResults', total > 0);
-            const ciNote = searchOptions.caseInsensitive ? ' (case-insensitive)' : '';
-            vsTreeView.message = `"${query}"${ciNote} — ${total} result${total === 1 ? '' : 's'}`;
-            outputChannel.appendLine(`Search complete. ${total} result(s) found.`);
-          }
-        },
+      const current = cfg.get<boolean>('caseInsensitive', false);
+      await cfg.update('caseInsensitive', !current, vscode.ConfigurationTarget.Workspace);
+      vscode.window.setStatusBarMessage(
+        `GitEverywhere: Case-insensitive ${!current ? 'ON' : 'OFF'}`,
+        3000,
       );
     }),
   );

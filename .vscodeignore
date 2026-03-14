@@ -11,6 +11,7 @@ scripts/**
 !CHANGELOG.md
 .eslintrc*
 tsconfig*.json
+vitest.config.ts
 node_modules/**
 .vscode/**
 DESIGN.md
