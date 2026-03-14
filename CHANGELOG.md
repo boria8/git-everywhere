@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.9] - 2026-03-14
+
+### Fixed
+- Filter button now visible in toolbar (replaced invalid icon name `filter-add` with `filter`)
+
 ## [0.1.8] - 2026-03-14
 
 ### Added
