@@ -1,5 +1,7 @@
 # GitEverywhere
 
+![GitEverywhere screenshot](images/screenshot.png)
+
 GitEverywhere is a VSCode extension that lets you search your entire git history — not just the current branch, but branches, reflog, stash entries, dangling commits, dangling blobs, FETCH_HEAD, git notes, special heads (ORIG_HEAD, MERGE_HEAD, CHERRY_PICK_HEAD), and worktree heads — all from a single sidebar panel with live-streaming results.
 
 ## Scan Depths

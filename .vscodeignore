@@ -2,6 +2,7 @@ src/**
 webview-src/**
 test/**
 spike/**
+scripts/**
 *.mjs
 *.ps1
 *.sh

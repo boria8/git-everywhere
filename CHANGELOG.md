@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.4] - 2026-03-14
+
+### Added
+- Extension icon (128x128) visible on the VS Marketplace and Activity Bar
+- Screenshot in README showing the results tree
+
 ## [0.1.3] - 2026-03-14
 
 ### Added
